@@ -19,9 +19,10 @@ categories = ["network-programming"]
 keywords = ["mdns", "dns", "multicast", "chromecast", "discovery"]
 
 [features]
-default = ["runtime-async-std"]
+default = ["runtime-async-std", "with-serde"]
 runtime-async-std = ["async-std"]
 runtime-tokio = ["tokio", "tokio-stream"]
+with-serde = ["serde"]
 
 [dependencies]
 dns-parser = "0.8.0"
@@ -34,4 +35,5 @@ async-stream = "0.2.0"
 async-std = { optional = true, version = "1.6.2", features = ["unstable", "attributes"] }
 tokio = {optional = true, version = "1.8", features = ["time", "net", "rt-multi-thread", "macros"]}
 tokio-stream = {optional = true, version = "0.1.8", features = ["time"]}
+serde = {optional = true, version = "1", features = ["derive"]}
 

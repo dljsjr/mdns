@@ -2,6 +2,7 @@ use std::net;
 use std::net::{IpAddr, SocketAddr};
 
 /// A DNS response.
+#[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Response {
     pub answers: Vec<Record>,
@@ -10,9 +11,11 @@ pub struct Response {
 }
 
 /// Any type of DNS record.
+#[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Record {
     pub name: String,
+    #[serde(with = "serde_helpers::dns_class")]
     pub class: dns_parser::Class,
     pub ttl: u32,
     pub kind: RecordKind,
@@ -20,6 +23,7 @@ pub struct Record {
 
 /// A specific DNS record variant.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RecordKind {
     A(net::Ipv4Addr),
     AAAA(net::Ipv6Addr),
@@ -39,6 +43,63 @@ pub enum RecordKind {
     PTR(String),
     /// A record kind that hasn't been implemented by this library yet.
     Unimplemented(Vec<u8>),
+}
+
+#[cfg(feature = "with-serde")]
+pub(crate) mod serde_helpers {
+    pub(crate) mod dns_class {
+        pub fn serialize<S>(class: &dns_parser::Class, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::ser::Serializer,
+        {
+            serializer.serialize_u8(*class as u8)
+        }
+
+        pub fn deserialize<'de, D>(d: D) -> Result<dns_parser::Class, D::Error>
+        where
+            D: serde::de::Deserializer<'de>,
+        {
+            d.deserialize_u8(DnsClassVisitor)
+        }
+
+        struct DnsClassVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for DnsClassVisitor {
+            type Value = dns_parser::Class;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("DNS CLASS value according to RFC 1035")
+            }
+
+            fn visit_i8<E>(self, v: i8) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                use dns_parser::Class::*;
+                let class = match v {
+                    1 => IN,
+                    2 => CS,
+                    3 => CH,
+                    4 => HS,
+                    _ => {
+                        return Err(serde::de::Error::invalid_value(
+                            serde::de::Unexpected::Signed(v as i64),
+                            &self,
+                        ))
+                    }
+                };
+
+                Ok(class)
+            }
+
+            fn visit_u8<E>(self, v: u8) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i8(v as i8)
+            }
+        }
+    }
 }
 
 impl Response {
