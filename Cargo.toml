@@ -31,7 +31,7 @@ err-derive = "0.2.1"
 futures-core = "0.3.1"
 futures-util = "0.3.1"
 log = "0.4"
-async-stream = "0.2.0"
+async-stream = "0.3"
 async-std = { optional = true, version = "1.6.2", features = ["unstable", "attributes"] }
 tokio = {optional = true, version = "1.8", features = ["time", "net", "rt-multi-thread", "macros"]}
 tokio-stream = {optional = true, version = "0.1.8", features = ["time"]}
