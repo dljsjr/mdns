@@ -3,7 +3,7 @@ use std::net::{IpAddr, SocketAddr};
 
 /// A DNS response.
 #[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct Response {
     pub answers: Vec<Record>,
     pub nameservers: Vec<Record>,
