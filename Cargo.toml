@@ -1,7 +1,7 @@
 [package]
 rust-version = "1.58.1"
 name = "mdns"
-version = "4.0.0"
+version = "5.0.0"
 authors = ["Dylan McKay <me@dylanmckay.io>"]
 edition = "2021"
 
@@ -25,6 +25,7 @@ runtime-tokio = ["tokio", "tokio-stream"]
 with-serde = ["serde"]
 
 [dependencies]
+bstr = "0.2.17"
 dns-parser = "0.8.0"
 net2 = "0.2"
 err-derive = "0.2.1"

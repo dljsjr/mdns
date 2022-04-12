@@ -1,3 +1,5 @@
+use bstr::BString;
+use std::collections::HashMap;
 use std::net;
 use std::net::{IpAddr, SocketAddr};
 
@@ -39,10 +41,27 @@ pub enum RecordKind {
         port: u16,
         target: String,
     },
-    TXT(Vec<String>),
+    TXT(HashMap<String, TxtRecordValue>),
     PTR(String),
     /// A record kind that hasn't been implemented by this library yet.
     Unimplemented(Vec<u8>),
+}
+
+/// A TXT Record's Value for a present Attribute following variants:
+/// - None:   Attribute present, with no value
+///           (e.g., "passreq" -- password required for this service)
+/// - Empty:  Attribute present, with empty value
+//            (e.g., "PlugIns=" -- the server supports plugins, but none are presently installed)
+/// - Value(BString): Attribute present, with non-empty value
+//                    (e.g., "PlugIns=JPEG,MPEG2,MPEG4")
+/// RFC ref: https://datatracker.ietf.org/doc/html/rfc6763#section-6.4
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum TxtRecordValue {
+    None,
+    Empty,
+    #[serde(with = "serde_helpers::bstring")]
+    Value(BString),
 }
 
 #[cfg(feature = "with-serde")]
@@ -97,6 +116,41 @@ pub(crate) mod serde_helpers {
                 E: serde::de::Error,
             {
                 self.visit_i8(v as i8)
+            }
+        }
+    }
+
+    pub(crate) mod bstring {
+        use bstr::{BString, ByteSlice};
+
+        pub fn serialize<S>(bstring: &BString, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::ser::Serializer,
+        {
+            serializer.serialize_bytes(bstring.as_bytes())
+        }
+
+        pub fn deserialize<'de, D>(d: D) -> Result<BString, D::Error>
+        where
+            D: serde::de::Deserializer<'de>,
+        {
+            d.deserialize_bytes(BStringVisitor)
+        }
+
+        struct BStringVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for BStringVisitor {
+            type Value = BString;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("DNS CLASS value according to RFC 1035")
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(BString::from(v))
             }
         }
     }
@@ -160,14 +214,14 @@ impl Response {
         Some((self.ip_addr()?, self.port()?).into())
     }
 
-    pub fn txt_records(&self) -> impl Iterator<Item = &str> {
+    pub fn txt_records(&self) -> impl Iterator<Item = (&str, &TxtRecordValue)> {
         self.records()
             .filter_map(|record| match record.kind {
                 RecordKind::TXT(ref txt) => Some(txt),
                 _ => None,
             })
             .flat_map(|txt| txt.iter())
-            .map(|txt| txt.as_str())
+            .map(|(key, value)| (key.as_str(), value))
     }
 }
 
@@ -210,11 +264,32 @@ impl RecordKind {
                 port,
                 target: target.to_string(),
             },
-            RData::TXT(ref txt) => RecordKind::TXT(
-                txt.iter()
-                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
-                    .collect(),
-            ),
+            RData::TXT(ref txt) => {
+                let mut txt_records: HashMap<String, TxtRecordValue> = HashMap::new();
+                for txt_record in txt.iter() {
+                    let mut kv_split = txt_record.split(|c| c == &b'=');
+                    if let Some(key_bytes) = kv_split.next() {
+                        let key = String::from_utf8_lossy(key_bytes).into_owned();
+                        if txt_records.contains_key(&key) {
+                            // RFC 6763 Section 6.4: If a client receives a TXT record containing
+                            // the same key more than once, then the client MUST silently ignore
+                            // all but the first occurrence of that attribute.
+                            continue;
+                        }
+                        let value = if let Some(value_bytes) = kv_split.next() {
+                            if value_bytes.is_empty() {
+                                TxtRecordValue::Empty
+                            } else {
+                                TxtRecordValue::Value(BString::from(value_bytes))
+                            }
+                        } else {
+                            TxtRecordValue::None
+                        };
+                        txt_records.insert(key, value);
+                    }
+                }
+                RecordKind::TXT(txt_records)
+            }
             RData::SOA(..) => {
                 RecordKind::Unimplemented("SOA record handling is not implemented".into())
             }
