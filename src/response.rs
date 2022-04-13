@@ -69,6 +69,7 @@ pub enum TxtRecordValue {
 /// Case is ignored when interpreting a key,
 /// so "papersize=A4", "PAPERSIZE=A4", and "Papersize=A4" are all identical.
 #[derive(Eq, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct TxtRecordKey(String);
 
 impl Hash for TxtRecordKey {
