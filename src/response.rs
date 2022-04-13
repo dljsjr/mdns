@@ -1,5 +1,6 @@
 use bstr::BString;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::net;
 use std::net::{IpAddr, SocketAddr};
 
@@ -47,7 +48,7 @@ pub enum RecordKind {
     Unimplemented(Vec<u8>),
 }
 
-/// A TXT Record's Value for a present Attribute following variants:
+/// A TXT Record's Value for a present Attribute with following variants:
 /// - None:   Attribute present, with no value
 ///           (e.g., "passreq" -- password required for this service)
 /// - Empty:  Attribute present, with empty value
@@ -62,6 +63,24 @@ pub enum TxtRecordValue {
     Empty,
     #[serde(with = "serde_helpers::bstring")]
     Value(BString),
+}
+
+/// A Case-insensitive wrapper for key string of TXT record following spec's mandate:
+/// Case is ignored when interpreting a key,
+/// so "papersize=A4", "PAPERSIZE=A4", and "Papersize=A4" are all identical.
+#[derive(Eq, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct TxtRecordKey(String);
+
+impl Hash for TxtRecordKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.to_lowercase().hash(state)
+    }
+}
+
+impl PartialEq<Self> for TxtRecordKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_lowercase() == other.0.to_lowercase()
+    }
 }
 
 #[cfg(feature = "with-serde")]
@@ -265,12 +284,12 @@ impl RecordKind {
                 target: target.to_string(),
             },
             RData::TXT(ref txt) => {
-                let mut txt_records: HashMap<String, TxtRecordValue> = HashMap::new();
+                let mut txt_records: HashMap<TxtRecordKey, TxtRecordValue> = HashMap::new();
                 for txt_record in txt.iter() {
                     let mut kv_split = txt_record.split(|c| c == &b'=');
                     if let Some(key_bytes) = kv_split.next() {
                         let key = String::from_utf8_lossy(key_bytes).into_owned();
-                        if txt_records.contains_key(&key) {
+                        if txt_records.contains_key(&TxtRecordKey(key.clone())) {
                             // RFC 6763 Section 6.4: If a client receives a TXT record containing
                             // the same key more than once, then the client MUST silently ignore
                             // all but the first occurrence of that attribute.
@@ -285,10 +304,15 @@ impl RecordKind {
                         } else {
                             TxtRecordValue::None
                         };
-                        txt_records.insert(key, value);
+                        txt_records.insert(TxtRecordKey(key), value);
                     }
                 }
-                RecordKind::TXT(txt_records)
+                RecordKind::TXT(
+                    txt_records
+                        .into_iter()
+                        .map(|(key, value)| (key.0, value))
+                        .collect(),
+                )
             }
             RData::SOA(..) => {
                 RecordKind::Unimplemented("SOA record handling is not implemented".into())
