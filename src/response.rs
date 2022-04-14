@@ -1,8 +1,8 @@
 use bstr::BString;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::net;
 use std::net::{IpAddr, SocketAddr};
+use unicase::UniCase;
 
 /// A DNS response.
 #[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
@@ -42,7 +42,8 @@ pub enum RecordKind {
         port: u16,
         target: String,
     },
-    TXT(HashMap<String, TxtRecordValue>),
+    #[serde(with = "serde_helpers::txt_records")]
+    TXT(HashMap<UniCase<String>, TxtRecordValue>),
     PTR(String),
     /// A record kind that hasn't been implemented by this library yet.
     Unimplemented(Vec<u8>),
@@ -63,25 +64,6 @@ pub enum TxtRecordValue {
     Empty,
     #[serde(with = "serde_helpers::bstring")]
     Value(BString),
-}
-
-/// A Case-insensitive wrapper for key string of TXT record following spec's mandate:
-/// Case is ignored when interpreting a key,
-/// so "papersize=A4", "PAPERSIZE=A4", and "Papersize=A4" are all identical.
-#[derive(Eq, Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
-pub struct TxtRecordKey(String);
-
-impl Hash for TxtRecordKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.to_lowercase().hash(state)
-    }
-}
-
-impl PartialEq<Self> for TxtRecordKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_lowercase() == other.0.to_lowercase()
-    }
 }
 
 #[cfg(feature = "with-serde")]
@@ -163,7 +145,7 @@ pub(crate) mod serde_helpers {
             type Value = BString;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("DNS CLASS value according to RFC 1035")
+                formatter.write_str("BString")
             }
 
             fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
@@ -171,6 +153,61 @@ pub(crate) mod serde_helpers {
                 E: serde::de::Error,
             {
                 Ok(BString::from(v))
+            }
+        }
+    }
+
+    pub(crate) mod txt_records {
+        use crate::TxtRecordValue;
+        use serde::{de::MapAccess, ser::SerializeMap};
+        use std::collections::HashMap;
+        use unicase::UniCase;
+
+        pub fn serialize<S>(
+            records: &HashMap<UniCase<String>, TxtRecordValue>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: serde::ser::Serializer,
+        {
+            let mut map = serializer.serialize_map(Some(records.len()))?;
+            for (k, v) in records {
+                map.serialize_entry(&k.to_string(), v)?;
+            }
+            map.end()
+        }
+
+        pub fn deserialize<'de, D>(
+            d: D,
+        ) -> Result<HashMap<UniCase<String>, TxtRecordValue>, D::Error>
+        where
+            D: serde::de::Deserializer<'de>,
+        {
+            d.deserialize_map(TxtRecordVisitor)
+        }
+
+        struct TxtRecordVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for TxtRecordVisitor {
+            type Value = HashMap<UniCase<String>, TxtRecordValue>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(
+                    "TXT Records map containing case-insensitive Key String and Value BString",
+                )
+            }
+
+            fn visit_map<A>(self, mut access: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut map = HashMap::<UniCase<String>, TxtRecordValue>::with_capacity(
+                    access.size_hint().unwrap_or(0),
+                );
+                while let Some((key, value)) = access.next_entry::<String, _>()? {
+                    map.insert(UniCase::new(key), value);
+                }
+                Ok(map)
             }
         }
     }
@@ -285,12 +322,12 @@ impl RecordKind {
                 target: target.to_string(),
             },
             RData::TXT(ref txt) => {
-                let mut txt_records: HashMap<TxtRecordKey, TxtRecordValue> = HashMap::new();
+                let mut txt_records: HashMap<UniCase<String>, TxtRecordValue> = HashMap::new();
                 for txt_record in txt.iter() {
                     let mut kv_split = txt_record.split(|c| c == &b'=');
                     if let Some(key_bytes) = kv_split.next() {
-                        let key = String::from_utf8_lossy(key_bytes).into_owned();
-                        if txt_records.contains_key(&TxtRecordKey(key.clone())) {
+                        let key = UniCase::new(String::from_utf8_lossy(key_bytes).into_owned());
+                        if txt_records.contains_key(&key) {
                             // RFC 6763 Section 6.4: If a client receives a TXT record containing
                             // the same key more than once, then the client MUST silently ignore
                             // all but the first occurrence of that attribute.
@@ -305,15 +342,10 @@ impl RecordKind {
                         } else {
                             TxtRecordValue::None
                         };
-                        txt_records.insert(TxtRecordKey(key), value);
+                        txt_records.insert(key, value);
                     }
                 }
-                RecordKind::TXT(
-                    txt_records
-                        .into_iter()
-                        .map(|(key, value)| (key.0, value))
-                        .collect(),
-                )
+                RecordKind::TXT(txt_records)
             }
             RData::SOA(..) => {
                 RecordKind::Unimplemented("SOA record handling is not implemented".into())

@@ -37,4 +37,4 @@ async-std = { optional = true, version = "1.6.2", features = ["unstable", "attri
 tokio = {optional = true, version = "1.8", features = ["time", "net", "rt-multi-thread", "macros"]}
 tokio-stream = {optional = true, version = "0.1.8", features = ["time"]}
 serde = {optional = true, version = "1", features = ["derive"]}
-
+unicase="2.6.0"
