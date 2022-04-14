@@ -172,7 +172,7 @@ pub(crate) mod serde_helpers {
         {
             let mut map = serializer.serialize_map(Some(records.len()))?;
             for (k, v) in records {
-                map.serialize_entry(&k.to_string(), v)?;
+                map.serialize_entry(&k.as_ref(), v)?;
             }
             map.end()
         }
