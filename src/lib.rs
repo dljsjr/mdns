@@ -65,7 +65,7 @@ compile_error!("\"runtime-async-std\" and \"runtime-tokio\" cannot be enabled si
 compile_error!("At least one runtime (\"runtime-async-std\" or \"runtime-tokio\") cargo feature must be enabled");
 
 pub use self::errors::Error;
-pub use self::response::{Record, RecordKind, Response};
+pub use self::response::{Record, RecordKind, Response, TxtRecordValue};
 
 pub mod discover;
 pub mod resolve;
