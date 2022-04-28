@@ -6,8 +6,6 @@ use async_stream::try_stream;
 use futures_core::Stream;
 use std::sync::Arc;
 
-#[cfg(not(target_os = "windows"))]
-use net2::unix::UnixUdpBuilderExt;
 use std::net::SocketAddr;
 
 /// The IP address for the mDNS multicast socket.
@@ -44,17 +42,29 @@ const ADDR_ANY: Ipv4Addr = Ipv4Addr::new(0, 0, 0, 0);
 
 #[cfg(not(target_os = "windows"))]
 fn create_socket() -> io::Result<std::net::UdpSocket> {
-    net2::UdpBuilder::new_v4()?
-        .reuse_address(true)?
-        .reuse_port(true)?
-        .bind((ADDR_ANY, MULTICAST_PORT))
+    let socket_addr = std::net::SocketAddrV4::new(ADDR_ANY, MULTICAST_PORT);
+    let domain = socket2::Domain::for_address(SocketAddr::V4(socket_addr));
+    let ty = socket2::Type::DGRAM;
+    let socket = socket2::Socket::new(domain, ty, Some(socket2::Protocol::UDP))?;
+
+    socket.set_reuse_address(true)?;
+    socket.set_reuse_port(true)?;
+    socket.bind(&SocketAddr::V4(socket_addr).into())?;
+
+    Ok(socket.into())
 }
 
 #[cfg(target_os = "windows")]
 fn create_socket() -> io::Result<std::net::UdpSocket> {
-    net2::UdpBuilder::new_v4()?
-        .reuse_address(true)?
-        .bind((ADDR_ANY, MULTICAST_PORT))
+    let socket_addr = std::net::SocketAddrV4::new(ADDR_ANY, MULTICAST_PORT);
+    let domain = socket2::Domain::for_address(SocketAddr::V4(socket_addr));
+    let ty = socket2::Type::DGRAM;
+    let socket = socket2::Socket::new(domain, ty, Some(socket2::Protocol::UDP))?;
+
+    socket.set_reuse_address(true)?;
+    socket.bind(&SocketAddr::V4(socket_addr).into())?;
+
+    Ok(socket.into())
 }
 
 /// An mDNS sender on a specific interface.
