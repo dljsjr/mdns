@@ -23,7 +23,7 @@
 //! }
 //! ```
 
-use crate::{mDNSListener, Error, Response};
+use crate::{mDNSListener, AsyncUdpSocket, Error, Response};
 
 use std::time::Duration;
 
@@ -37,11 +37,11 @@ use std::net::Ipv4Addr;
 /// This represents a single lookup of a single service name.
 ///
 /// This object can be iterated over to yield the received mDNS responses.
-pub struct Discovery {
+pub struct Discovery<T: AsyncUdpSocket, U: AsyncUdpSocket> {
     service_name: String,
 
-    mdns_sender: mDNSSender,
-    mdns_listener: mDNSListener,
+    mdns_sender: mDNSSender<T>,
+    mdns_listener: mDNSListener<U>,
 
     /// Whether we should ignore empty responses.
     ignore_empty: bool,
@@ -51,11 +51,14 @@ pub struct Discovery {
 }
 
 /// Gets an iterator over all responses for a given service on all interfaces.
-pub fn all<S>(service_name: S, mdns_query_interval: Duration) -> Result<Discovery, Error>
+pub fn all<S>(
+    service_name: S,
+    mdns_query_interval: Duration,
+) -> Result<Discovery<impl AsyncUdpSocket + 'static, impl AsyncUdpSocket + 'static>, Error>
 where
     S: AsRef<str>,
 {
-    interface(service_name, mdns_query_interval, Ipv4Addr::new(0, 0, 0, 0))
+    todo!()
 }
 
 /// Gets an iterator over all responses for a given service on a given interface.
@@ -63,7 +66,7 @@ pub fn interface<S>(
     service_name: S,
     mdns_query_interval: Duration,
     interface_addr: Ipv4Addr,
-) -> Result<Discovery, Error>
+) -> Result<Discovery<impl AsyncUdpSocket + 'static, impl AsyncUdpSocket + 'static>, Error>
 where
     S: AsRef<str>,
 {
@@ -79,7 +82,7 @@ where
     })
 }
 
-impl Discovery {
+impl<T: AsyncUdpSocket + Send + 'static, U: AsyncUdpSocket + Send + 'static> Discovery<T, U> {
     /// Sets whether or not we should ignore empty responses.
     ///
     /// Defaults to `true`.

@@ -1,10 +1,10 @@
-use crate::{runtime::AsyncUdpSocket, Error, Response};
+use crate::AsyncUdpSocket;
+use crate::{Error, Response};
 
 use std::{io, net::Ipv4Addr};
 
 use async_stream::try_stream;
 use futures_core::Stream;
-use std::sync::Arc;
 
 use std::net::SocketAddr;
 
@@ -15,7 +15,13 @@ const MULTICAST_PORT: u16 = 5353;
 pub fn mdns_interface(
     service_name: String,
     interface_addr: Ipv4Addr,
-) -> Result<(mDNSListener, mDNSSender), Error> {
+) -> Result<
+    (
+        mDNSListener<impl AsyncUdpSocket>,
+        mDNSSender<impl AsyncUdpSocket>,
+    ),
+    Error,
+> {
     let socket = create_socket()?;
 
     socket.set_multicast_loop_v4(false)?;
@@ -54,6 +60,12 @@ fn create_socket() -> io::Result<std::net::UdpSocket> {
     Ok(socket.into())
 }
 
+// #[cfg(all(not(target_os = "windows"), feature = "multihome"))]
+// fn create_multihome_socket() -> io::Result<multicast_socket::MulticastSocket> {
+//     use multicast_socket::MulticastSocket;
+//     MulticastSocket::all_interfaces(SocketAddrV4::new(ADDR_ANY, MULTICAST_PORT))
+// }
+
 #[cfg(target_os = "windows")]
 fn create_socket() -> io::Result<std::net::UdpSocket> {
     let socket_addr = std::net::SocketAddrV4::new(ADDR_ANY, MULTICAST_PORT);
@@ -70,12 +82,12 @@ fn create_socket() -> io::Result<std::net::UdpSocket> {
 /// An mDNS sender on a specific interface.
 #[derive(Debug, Clone)]
 #[allow(non_camel_case_types)]
-pub struct mDNSSender {
+pub struct mDNSSender<T: AsyncUdpSocket> {
     service_name: String,
-    send: Arc<AsyncUdpSocket>,
+    send: T,
 }
 
-impl mDNSSender {
+impl<T: AsyncUdpSocket> mDNSSender<T> {
     /// Send multicasted DNS queries.
     pub async fn send_request(&mut self) -> Result<(), Error> {
         let mut builder = dns_parser::Builder::new_query(0, false);
@@ -98,12 +110,12 @@ impl mDNSSender {
 /// An mDNS listener on a specific interface.
 #[derive(Debug, Clone)]
 #[allow(non_camel_case_types)]
-pub struct mDNSListener {
-    pub(crate) recv: Arc<AsyncUdpSocket>,
+pub struct mDNSListener<T: AsyncUdpSocket> {
+    pub(crate) recv: T,
     pub(crate) recv_buffer: Vec<u8>,
 }
 
-impl mDNSListener {
+impl<T: AsyncUdpSocket> mDNSListener<T> {
     pub fn listen(mut self) -> impl Stream<Item = Result<Response, Error>> {
         try_stream! {
             loop {

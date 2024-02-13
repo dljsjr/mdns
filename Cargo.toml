@@ -19,22 +19,40 @@ categories = ["network-programming"]
 keywords = ["mdns", "dns", "multicast", "chromecast", "discovery"]
 
 [features]
-default = ["runtime-async-std", "with-serde"]
+default = ["runtime-tokio", "with-serde", "multihome"]
 runtime-async-std = ["async-std"]
 runtime-tokio = ["tokio", "tokio-stream"]
 with-serde = ["serde"]
+multihome = ["multicast-socket"]
 
 [dependencies]
+async-std = { optional = true, version = "1.6.2", features = [
+    "unstable",
+    "attributes",
+] }
+async-stream = "0.3"
+async-trait = "0.1"
 bstr = "1.8"
 dns-parser = "0.8.0"
-socket2 = "0.4"
-err-derive = "0.2.1"
+err-derive = "0.3"
 futures-core = "0.3.1"
 futures-util = "0.3.1"
 log = "0.4"
-async-stream = "0.3"
-async-std = { optional = true, version = "1.6.2", features = ["unstable", "attributes"] }
-tokio = {optional = true, version = "1.8", features = ["time", "net", "rt-multi-thread", "macros"]}
-tokio-stream = {optional = true, version = "0.1.8", features = ["time"]}
-serde = {optional = true, version = "1", features = ["derive"]}
-unicase="2.6.0"
+serde = { optional = true, version = "1", features = ["derive"] }
+socket2 = { version = "0.5", features = ["all"] }
+tokio = { optional = true, version = "1.8", features = [
+    "time",
+    "net",
+    "rt-multi-thread",
+    "macros",
+] }
+tokio-stream = { optional = true, version = "0.1.8", features = ["time"] }
+unicase = "2.6.0"
+
+[dependencies.multicast-socket]
+optional = true
+version = "0.4.0"
+git = "https://github.com/PhysicalGraph/multicast-socket"
+branch = "feat/tokio-async-socket"
+default-features = false
+features = ["tokio"]

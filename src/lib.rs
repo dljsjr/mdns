@@ -64,6 +64,10 @@ compile_error!("\"runtime-async-std\" and \"runtime-tokio\" cannot be enabled si
 #[cfg(not(any(feature = "runtime-async-std", feature = "runtime-tokio")))]
 compile_error!("At least one runtime (\"runtime-async-std\" or \"runtime-tokio\") cargo feature must be enabled");
 
+use std::net::SocketAddr;
+
+use async_trait::async_trait;
+
 pub use self::errors::Error;
 pub use self::response::{Record, RecordKind, Response, TxtRecordValue};
 
@@ -75,5 +79,23 @@ mod runtime;
 mod errors;
 mod mdns;
 mod response;
+
+pub(crate) struct IntermediateSocket(std::net::UdpSocket);
+
+impl From<std::net::UdpSocket> for IntermediateSocket {
+    fn from(value: std::net::UdpSocket) -> Self {
+        IntermediateSocket(value)
+    }
+}
+
+#[async_trait]
+pub trait AsyncUdpSocket: Send + Clone {
+    async fn send_to(
+        &self,
+        buf: &[u8],
+        target: impl Into<SocketAddr> + Send,
+    ) -> std::io::Result<usize>;
+    async fn recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)>;
+}
 
 pub use self::mdns::mDNSListener;
