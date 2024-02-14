@@ -12,6 +12,8 @@ use std::net::SocketAddr;
 const MULTICAST_ADDR: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 251);
 const MULTICAST_PORT: u16 = 5353;
 
+const DEFAULT_BUFFER_SIZE: usize = 4096;
+
 pub fn mdns_interface(
     service_name: String,
     interface_addr: Ipv4Addr,
@@ -30,7 +32,46 @@ pub fn mdns_interface(
 
     let socket = crate::runtime::make_async_socket(socket)?;
 
-    let recv_buffer = vec![0; 4096];
+    let recv_buffer = vec![0; DEFAULT_BUFFER_SIZE];
+
+    Ok((
+        mDNSListener {
+            recv: socket.clone(),
+            recv_buffer,
+        },
+        mDNSSender {
+            service_name,
+            send: socket,
+        },
+    ))
+}
+
+#[cfg(feature = "multihome")]
+pub fn multihome_mdns_interface(
+    service_name: String,
+) -> Result<
+    (
+        mDNSListener<impl AsyncUdpSocket>,
+        mDNSSender<impl AsyncUdpSocket>,
+    ),
+    Error,
+> {
+    use multicast_socket::MulticastSocket;
+
+    let socket = MulticastSocket::with_options(
+        std::net::SocketAddrV4::new(MULTICAST_ADDR, MULTICAST_PORT),
+        multicast_socket::all_ipv4_interfaces()?,
+        multicast_socket::MulticastOptions {
+            read_timeout: None,
+            loopback: false,
+            buffer_size: DEFAULT_BUFFER_SIZE,
+            bind_address: Ipv4Addr::UNSPECIFIED,
+            nonblocking: true,
+        },
+    )?;
+
+    let socket = crate::runtime::make_multihome_async_socket(socket)?;
+    let recv_buffer = vec![0; DEFAULT_BUFFER_SIZE];
 
     Ok((
         mDNSListener {
@@ -59,12 +100,6 @@ fn create_socket() -> io::Result<std::net::UdpSocket> {
 
     Ok(socket.into())
 }
-
-// #[cfg(all(not(target_os = "windows"), feature = "multihome"))]
-// fn create_multihome_socket() -> io::Result<multicast_socket::MulticastSocket> {
-//     use multicast_socket::MulticastSocket;
-//     MulticastSocket::all_interfaces(SocketAddrV4::new(ADDR_ANY, MULTICAST_PORT))
-// }
 
 #[cfg(target_os = "windows")]
 fn create_socket() -> io::Result<std::net::UdpSocket> {
@@ -98,7 +133,8 @@ impl<T: AsyncUdpSocket> mDNSSender<T> {
             dns_parser::QueryType::PTR,
             dns_parser::QueryClass::IN,
         );
-        let packet_data = builder.build().unwrap();
+        // This builder users the Error position to return a *valid* truncated packet 🤦
+        let packet_data = builder.build().unwrap_or_else(|x| x);
 
         let addr = SocketAddr::new(MULTICAST_ADDR.into(), MULTICAST_PORT);
 
@@ -120,7 +156,6 @@ impl<T: AsyncUdpSocket> mDNSListener<T> {
         try_stream! {
             loop {
                 let (count, _) = self.recv.recv_from(&mut self.recv_buffer).await?;
-
                 if count > 0 {
                     match dns_parser::Packet::parse(&self.recv_buffer[..count]) {
                         Ok(raw_packet) => yield Response::from_packet(&raw_packet),

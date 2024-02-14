@@ -67,6 +67,7 @@ compile_error!("At least one runtime (\"runtime-async-std\" or \"runtime-tokio\"
 use std::net::SocketAddr;
 
 use async_trait::async_trait;
+use multicast_socket::MulticastSocket;
 
 pub use self::errors::Error;
 pub use self::response::{Record, RecordKind, Response, TxtRecordValue};
@@ -80,11 +81,30 @@ mod errors;
 mod mdns;
 mod response;
 
-pub(crate) struct IntermediateSocket(std::net::UdpSocket);
+pub(crate) enum IntermediateSocketType {
+    StdNetSocket(std::net::UdpSocket),
+    #[cfg(feature = "multihome")]
+    MultihomeSocket(MulticastSocket),
+}
+
+impl IntermediateSocket {
+    pub(crate) fn take_inner(self) -> IntermediateSocketType {
+        self.0
+    }
+}
+
+pub(crate) struct IntermediateSocket(IntermediateSocketType);
 
 impl From<std::net::UdpSocket> for IntermediateSocket {
     fn from(value: std::net::UdpSocket) -> Self {
-        IntermediateSocket(value)
+        IntermediateSocket(IntermediateSocketType::StdNetSocket(value))
+    }
+}
+
+#[cfg(feature = "multihome")]
+impl From<multicast_socket::MulticastSocket> for IntermediateSocket {
+    fn from(value: multicast_socket::MulticastSocket) -> Self {
+        IntermediateSocket(IntermediateSocketType::MultihomeSocket(value))
     }
 }
 

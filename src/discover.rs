@@ -51,6 +51,7 @@ pub struct Discovery<T: AsyncUdpSocket, U: AsyncUdpSocket> {
 }
 
 /// Gets an iterator over all responses for a given service on all interfaces.
+#[cfg(feature = "multihome")]
 pub fn all<S>(
     service_name: S,
     mdns_query_interval: Duration,
@@ -58,7 +59,18 @@ pub fn all<S>(
 where
     S: AsRef<str>,
 {
-    todo!()
+    use crate::mdns::multihome_mdns_interface;
+
+    let service_name = service_name.as_ref().to_string();
+    let (mdns_listener, mdns_sender) = multihome_mdns_interface(service_name.clone())?;
+
+    Ok(Discovery {
+        service_name,
+        mdns_sender,
+        mdns_listener,
+        ignore_empty: true,
+        send_request_interval: mdns_query_interval,
+    })
 }
 
 /// Gets an iterator over all responses for a given service on a given interface.
@@ -102,11 +114,20 @@ impl<T: AsyncUdpSocket + Send + 'static, U: AsyncUdpSocket + Send + 'static> Dis
             .map(move |_| {
                 let mut sender = sender.clone();
                 crate::runtime::spawn(async move {
-                    let _ = sender.send_request().await;
+                    if let Err(e) = sender.send_request().await {
+                        log::error!("Error sending query from interval stream: {e:?}");
+                    }
                 });
                 StreamResult::Interval
             });
 
+        let sender = self.mdns_sender.clone();
+        crate::runtime::spawn(async {
+            let mut sender = sender;
+            if let Err(e) = sender.send_request().await {
+                log::error!("Error sending query from initial query: {e:?}");
+            }
+        });
         let stream = select(response_stream, interval_stream);
         stream
             .filter_map(|stream_result| async {
@@ -124,7 +145,10 @@ impl<T: AsyncUdpSocket + Send + 'static, U: AsyncUdpSocket + Send + 'static> Dis
                                 .iter()
                                 .any(|record| record.name == service_name)
                     }
-                    Err(_) => true,
+                    Err(e) => {
+                        log::warn!("Error on listener stream: {e:?}");
+                        true
+                    }
                 })
             })
     }
