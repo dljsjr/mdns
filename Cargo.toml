@@ -40,7 +40,7 @@ futures-util = "0.3.1"
 log = "0.4"
 serde = { optional = true, version = "1", features = ["derive"] }
 socket2 = { version = "0.5", features = ["all"] }
-tokio = { optional = true, version = "1.8", features = [
+tokio = { optional = true, version = "1.28", features = [
     "time",
     "net",
     "rt-multi-thread",
