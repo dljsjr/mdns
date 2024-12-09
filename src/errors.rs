@@ -1,4 +1,3 @@
-use err_derive::Error;
 
 #[cfg(feature = "runtime-async-std")]
 pub use async_std::future::TimeoutError;
@@ -6,12 +5,12 @@ pub use async_std::future::TimeoutError;
 #[cfg(feature = "runtime-tokio")]
 pub use tokio::time::error::Elapsed as TimeoutError;
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error(display = "_0")]
-    Io(#[error(source)] std::io::Error),
-    #[error(display = "_0")]
-    Dns(#[error(source)] dns_parser::Error),
-    #[error(display = "_0")]
-    TimeoutError(#[error(source)] TimeoutError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Dns(#[from] dns_parser::Error),
+    #[error(transparent)]
+    TimeoutError(#[from] TimeoutError),
 }
